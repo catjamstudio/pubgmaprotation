@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import httpx, yaml
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
@@ -152,4 +152,6 @@ async def discord_test():
                 if not r.is_success: raise HTTPException(502, f"Discord webhook '{hook.get('name') or 'unnamed'}' returned {r.status_code}: {r.text[:300]}")
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
-async def home(): return (ROOT/"index.html").read_text()
+async def home(): return (ROOT/"index.html").read_text().replace("</head>", '<link rel="stylesheet" href="/theme.css"></head>')
+@app.get("/theme.css")
+async def theme(): return FileResponse(ROOT/"theme.css", media_type="text/css")
