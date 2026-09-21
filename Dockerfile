@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py index.html .
+COPY app.py index.html theme.css .
 ENV CONFIG_DIR=/config PYTHONUNBUFFERED=1
 VOLUME /config
 EXPOSE 8080
