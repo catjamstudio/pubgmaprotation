@@ -42,6 +42,7 @@ def settings():
     data = {**DEFAULTS, **(data or {})}
     if os.getenv("GITHUB_TOKEN"): data["github_token"] = os.getenv("GITHUB_TOKEN")
     if os.getenv("DISCORD_WEBHOOKS"): data["discord_webhooks"] = [x.strip() for x in os.getenv("DISCORD_WEBHOOKS").split(",") if x.strip()]
+    if not data.get("discord_webhooks") and data.get("discord_webhook"): data["discord_webhooks"] = [data["discord_webhook"]]
     data["discord_webhooks"] = [h if isinstance(h, dict) else {"name":"", "username":"", "url":h, "avatar_url":""} for h in data.get("discord_webhooks", [])]
     return data
 def save(data): CONFIG_FILE.write_text(yaml.safe_dump(data, sort_keys=False))
@@ -103,7 +104,12 @@ async def publish(parsed):
         for hook in cfg.get("discord_webhooks", []):
             url = hook.get("url", "") if isinstance(hook, dict) else hook
             if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
-            if url: (await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
+            if url:
+                payload={"content":"PUBG map rotation updated:\n"+"\n".join(files.values())}
+                if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
+                if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
+                response=await c.post(url,json=payload)
+                if not response.is_success: raise HTTPException(502, f"Discord webhook '{hook.get('name') or 'unnamed'}' returned {response.status_code}: {response.text[:300]}")
     return files
 @app.get("/api/settings")
 async def get_settings():
@@ -128,7 +134,11 @@ async def discord_test():
             url = hook.get("url", "") if isinstance(hook, dict) else hook
             if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url:
-                r=await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
+                payload={"content":"PUBG Map Rotation webhook test successful."}
+                if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
+                if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
+                r=await c.post(url,json=payload)
+                if not r.is_success: raise HTTPException(502, f"Discord webhook '{hook.get('name') or 'unnamed'}' returned {r.status_code}: {r.text[:300]}")
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
 async def home(): return (ROOT/"index.html").read_text()
