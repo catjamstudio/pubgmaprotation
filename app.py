@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64, os, re, time
+import asyncio, base64, os, re, time
 from pathlib import Path
 from datetime import datetime, timezone
 import httpx, yaml
@@ -11,14 +11,38 @@ from pydantic import BaseModel
 ROOT = Path(__file__).parent
 CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/config")); CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.yaml"
-DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhook":"", "rollover_timestamp":1788915600, "automatic_updates":True}
+DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
 app = FastAPI(title="PUBG Map Rotation")
+last_schedule_key = ""
+
+async def scheduler():
+    global last_schedule_key
+    while True:
+        cfg = settings(); now = datetime.now(timezone.utc)
+        try: target_day, target_time = int(cfg.get("schedule_weekday", 2)), str(cfg.get("schedule_time", "01:00"))
+        except (TypeError, ValueError): target_day, target_time = 2, "01:00"
+        key = now.strftime("%Y-%m-%d") + target_time
+        if cfg.get("automatic_updates") and now.weekday() == target_day and now.strftime("%H:%M") == target_time and key != last_schedule_key:
+            try:
+                parsed = parse(await fetch(cfg["report_url"])); await publish(parsed); last_schedule_key = key
+            except Exception: pass
+        await asyncio.sleep(30)
+
+@app.on_event("startup")
+async def start_scheduler(): app.state.scheduler = asyncio.create_task(scheduler())
+
+@app.on_event("shutdown")
+async def stop_scheduler():
+    app.state.scheduler.cancel()
 
 class TextIn(BaseModel): text: str
-class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; discord_webhook:str=""; rollover_timestamp:int=1788915600; automatic_updates:bool=True
+class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True
 def settings():
     data = yaml.safe_load(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
-    return {**DEFAULTS, **(data or {})}
+    data = {**DEFAULTS, **(data or {})}
+    if os.getenv("GITHUB_TOKEN"): data["github_token"] = os.getenv("GITHUB_TOKEN")
+    if os.getenv("DISCORD_WEBHOOKS"): data["discord_webhooks"] = [x.strip() for x in os.getenv("DISCORD_WEBHOOKS").split(",") if x.strip()]
+    return data
 def save(data): CONFIG_FILE.write_text(yaml.safe_dump(data, sort_keys=False))
 def clean(s): return re.sub(r"\s+", " ", s).strip()
 def parse(text):
@@ -63,7 +87,7 @@ def line(item, region, prefix): return f"{prefix} ({item['date']}) Map Rotation:
 async def fetch(url):
     async with httpx.AsyncClient(timeout=30,follow_redirects=True) as c: r=await c.get(url); r.raise_for_status(); return r.text
 async def publish(parsed):
-    cfg=settings(); weeks=parsed["weeks"]; index=min(max(int(parsed.get("current_index",0)),0),max(0,len(weeks)-1)); nxt=index+1
+    cfg=settings(); weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
     cur=weeks[index]; files={"maparray":line(cur,"EU",f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
     if nxt<len(weeks): files.update(nextweek=line(weeks[nxt],"EU",f"Next Week {weeks[nxt]['week']}"),nextweek_sea=line(weeks[nxt],"SEA",f"Next Week {weeks[nxt]['week']}"))
     else: files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
@@ -75,14 +99,14 @@ async def publish(parsed):
             old=await c.get(url,params={"ref":cfg["github_branch"]},headers=headers); payload={"message":f"Update PUBG map rotation: {path}","content":base64.b64encode(content.encode()).decode(),"branch":cfg["github_branch"]}
             if old.is_success: payload["sha"]=old.json()["sha"]
             r=await c.put(url,headers=headers,json=payload); r.raise_for_status()
-        if cfg["discord_webhook"]: (await c.post(cfg["discord_webhook"],json={"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
+        for webhook in cfg.get("discord_webhooks", []): (await c.post(webhook,json={"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
     return files
 @app.get("/api/settings")
 async def get_settings():
-    data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); data["discord_webhook_set"]=bool(data.get("discord_webhook")); data["discord_webhook"]=""; return data
+    data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); data["discord_webhooks_count"]=len(data.pop("discord_webhooks", [])); return data
 @app.put("/api/settings")
 async def put_settings(payload:Settings):
-    old=settings(); data=payload.model_dump(); data["github_token"]=data["github_token"] or old.get("github_token",""); save(data); return {"saved":True}
+    old=settings(); data=payload.model_dump(); data["github_token"]=old.get("github_token",""); data["discord_webhooks"]=old.get("discord_webhooks",[]); save(data); return {"saved":True}
 @app.post("/api/parse/url")
 async def parse_url(payload:TextIn):
     try:return parse(await fetch(payload.text))
@@ -94,8 +118,10 @@ async def do_publish(payload:dict): return {"published":True,"files":await publi
 @app.post("/api/discord/test")
 async def discord_test():
     cfg=settings()
-    if not cfg["discord_webhook"]: raise HTTPException(400,"Discord webhook is not configured")
-    async with httpx.AsyncClient() as c: r=await c.post(cfg["discord_webhook"],json={"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
+    if not cfg.get("discord_webhooks"): raise HTTPException(400,"No Discord webhooks are configured")
+    async with httpx.AsyncClient() as c:
+        for webhook in cfg["discord_webhooks"]:
+            r=await c.post(webhook,json={"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
 async def home(): return (ROOT/"index.html").read_text()

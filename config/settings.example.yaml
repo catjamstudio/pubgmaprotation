@@ -1,0 +1,12 @@
+report_url: https://pubg.com/en/news/11019
+github_username: catjamstudio
+github_repo: pubgmaprotation
+github_branch: docker-app
+github_token: paste-your-token-here
+discord_webhooks:
+  - https://discord.com/api/webhooks/first
+  - https://discord.com/api/webhooks/second
+rollover_timestamp: 1788915600
+schedule_weekday: 2
+schedule_time: "01:00"
+automatic_updates: true
