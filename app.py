@@ -102,6 +102,7 @@ async def publish(parsed):
             r=await c.put(url,headers=headers,json=payload); r.raise_for_status()
         for hook in cfg.get("discord_webhooks", []):
             url = hook.get("url", "") if isinstance(hook, dict) else hook
+            if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url: (await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
     return files
 @app.get("/api/settings")
@@ -125,6 +126,7 @@ async def discord_test():
     async with httpx.AsyncClient() as c:
         for hook in cfg["discord_webhooks"]:
             url = hook.get("url", "") if isinstance(hook, dict) else hook
+            if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url:
                 r=await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
     return {"sent":True}
