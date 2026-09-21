@@ -91,13 +91,18 @@ def parse(text):
                 week = int(re.search(r"\d+", vals[0]).group())
                 result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})[table_region] = vals[1:]
     return {"weeks":list(result.values())}
-def line(item, region, prefix): return f"{prefix} ({item['date']}) Map Rotation: {region} - {', '.join(item.get(region) or ['Not used this season'])}"
+def short_date(value):
+    for full, short in {"January":"Jan","February":"Feb","March":"Mar","April":"Apr","May":"May","June":"Jun","July":"Jul","August":"Aug","September":"Sep","October":"Oct","November":"Nov","December":"Dec"}.items(): value = value.replace(full, short)
+    return value
+def maps(item, region): return ", ".join(item.get(region) or ["Not used this season"])
+def line(item, region, prefix): return f"{prefix} ({short_date(item['date'])}) Map Rotation: {region} - {maps(item, region)}"
+def combined_line(item, prefix): return f"{prefix} ({short_date(item['date'])}) Map Rotation: EU - {maps(item, 'EU')} | NA - {maps(item, 'NA')}"
 async def fetch(url):
     async with httpx.AsyncClient(timeout=30,follow_redirects=True) as c: r=await c.get(url); r.raise_for_status(); return r.text
 async def publish(parsed):
     cfg=settings(); weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
-    cur=weeks[index]; files={"maparray":line(cur,"EU",f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
-    if nxt<len(weeks): files.update(nextweek=line(weeks[nxt],"EU",f"Next Week {weeks[nxt]['week']}"),nextweek_sea=line(weeks[nxt],"SEA",f"Next Week {weeks[nxt]['week']}"))
+    cur=weeks[index]; files={"maparray":combined_line(cur,f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
+    if nxt<len(weeks): files.update(nextweek=combined_line(weeks[nxt],f"Next Week {weeks[nxt]['week']}"),nextweek_sea=line(weeks[nxt],"SEA",f"Next Week {weeks[nxt]['week']}"))
     else: files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
