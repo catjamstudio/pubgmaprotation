@@ -30,7 +30,16 @@ def parse(text):
     dates={int(n):d.replace("(Thu)","").replace("(Wed)","").strip() for n,d in re.findall(r"Week\s+(\d+)\s*\|\s*([A-Z][a-z]+\s+\d+(?:\([A-Za-z]+\))?)",plain)}
     result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[]} for n in sorted(dates)}
     region=None
-    for row in rows or [re.split(r"\s*\|\s*",x) for x in text.splitlines()]:
+    stream = []
+    for node in soup.find_all(["h4", "tr"]):
+        if node.name == "h4":
+            title = clean(node.get_text(" ", strip=True)).upper()
+            if title in {"NA", "EU", "SEA"}: region = title
+        else:
+            vals=[clean(c.get_text(" ",strip=True)) for c in node.select("th,td")]
+            if vals: stream.append((region, vals))
+    for active_region, row in stream or [(region, re.split(r"\s*\|\s*",x)) for x in text.splitlines()]:
+        if active_region: region = active_region
         line=" | ".join(row); upper=line.upper()
         if re.search(r"\b(NA|EU|SEA)\b",upper) and not re.search(r"Week",line): region=re.search(r"\b(NA|EU|SEA)\b",upper).group(1); continue
         m=re.match(r"Week\s*(\d+)\s*\|\s*(.*)",line,re.I)
