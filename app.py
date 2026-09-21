@@ -46,6 +46,18 @@ def parse(text):
         if m and region:
             maps=[clean(x) for x in m.group(2).split("|") if clean(x)]
             result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[]})[region]=maps
+    # PUBG's live article consistently orders the normal-match tables as
+    # schedule, AS, SEA, KAKAO, NA, SA, EU. Use table boundaries as a
+    # fallback when the CMS omits semantic heading tags in its response.
+    table_regions = {2: "SEA", 4: "NA", 6: "EU"}
+    for table_index, table_region in table_regions.items():
+        tables = soup.select("table")
+        if table_index >= len(tables): continue
+        for tr in tables[table_index].select("tr"):
+            vals = [clean(c.get_text(" ", strip=True)) for c in tr.select("th,td")]
+            if len(vals) >= 2 and re.match(r"Week\s+\d+", vals[0], re.I):
+                week = int(re.search(r"\d+", vals[0]).group())
+                result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})[table_region] = vals[1:]
     return {"weeks":list(result.values())}
 def line(item, region, prefix): return f"{prefix} ({item['date']}) Map Rotation: {region} - {', '.join(item.get(region) or ['Not used this season'])}"
 async def fetch(url):
