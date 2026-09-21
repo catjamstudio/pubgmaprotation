@@ -36,12 +36,13 @@ async def stop_scheduler():
     app.state.scheduler.cancel()
 
 class TextIn(BaseModel): text: str
-class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True
+class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]
 def settings():
     data = yaml.safe_load(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
     data = {**DEFAULTS, **(data or {})}
     if os.getenv("GITHUB_TOKEN"): data["github_token"] = os.getenv("GITHUB_TOKEN")
     if os.getenv("DISCORD_WEBHOOKS"): data["discord_webhooks"] = [x.strip() for x in os.getenv("DISCORD_WEBHOOKS").split(",") if x.strip()]
+    data["discord_webhooks"] = [h if isinstance(h, dict) else {"name":"", "username":"", "url":h, "avatar_url":""} for h in data.get("discord_webhooks", [])]
     return data
 def save(data): CONFIG_FILE.write_text(yaml.safe_dump(data, sort_keys=False))
 def clean(s): return re.sub(r"\s+", " ", s).strip()
@@ -99,14 +100,16 @@ async def publish(parsed):
             old=await c.get(url,params={"ref":cfg["github_branch"]},headers=headers); payload={"message":f"Update PUBG map rotation: {path}","content":base64.b64encode(content.encode()).decode(),"branch":cfg["github_branch"]}
             if old.is_success: payload["sha"]=old.json()["sha"]
             r=await c.put(url,headers=headers,json=payload); r.raise_for_status()
-        for webhook in cfg.get("discord_webhooks", []): (await c.post(webhook,json={"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
+        for hook in cfg.get("discord_webhooks", []):
+            url = hook.get("url", "") if isinstance(hook, dict) else hook
+            if url: (await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG map rotation updated:\n"+"\n".join(files.values())})).raise_for_status()
     return files
 @app.get("/api/settings")
 async def get_settings():
-    data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); data["discord_webhooks_count"]=len(data.pop("discord_webhooks", [])); return data
+    data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); return data
 @app.put("/api/settings")
 async def put_settings(payload:Settings):
-    old=settings(); data=payload.model_dump(); data["github_token"]=old.get("github_token",""); data["discord_webhooks"]=old.get("discord_webhooks",[]); save(data); return {"saved":True}
+    old=settings(); data=payload.model_dump(); data["github_token"]=old.get("github_token",""); save(data); return {"saved":True}
 @app.post("/api/parse/url")
 async def parse_url(payload:TextIn):
     try:return parse(await fetch(payload.text))
@@ -120,8 +123,10 @@ async def discord_test():
     cfg=settings()
     if not cfg.get("discord_webhooks"): raise HTTPException(400,"No Discord webhooks are configured")
     async with httpx.AsyncClient() as c:
-        for webhook in cfg["discord_webhooks"]:
-            r=await c.post(webhook,json={"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
+        for hook in cfg["discord_webhooks"]:
+            url = hook.get("url", "") if isinstance(hook, dict) else hook
+            if url:
+                r=await c.post(url,json={"username":hook.get("username") or None,"avatar_url":hook.get("avatar_url") or None,"content":"PUBG Map Rotation webhook test successful."}); r.raise_for_status()
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
 async def home(): return (ROOT/"index.html").read_text()
