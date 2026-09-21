@@ -152,6 +152,6 @@ async def discord_test():
                 if not r.is_success: raise HTTPException(502, f"Discord webhook '{hook.get('name') or 'unnamed'}' returned {r.status_code}: {r.text[:300]}")
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
-async def home(): return (ROOT/"index.html").read_text().replace("<style>", '<link rel="stylesheet" href="/theme.css"><style>', 1)
+async def home(): return (ROOT/"index.html").read_text().replace("<style>", '<link rel="stylesheet" href="/theme.css"><style>.brand-logo{width:64px;height:64px;object-fit:contain;vertical-align:middle;filter:drop-shadow(0 4px 5px #000)}</style><style>', 1).replace("🪂 PUBG Map Rotation", '<img class="brand-logo" src="https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png" alt="PUBG helmet logo"> PUBG Map Rotation', 1)
 @app.get("/theme.css")
 async def theme(): return FileResponse(ROOT/"theme.css", media_type="text/css")
