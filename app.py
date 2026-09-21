@@ -152,6 +152,6 @@ async def discord_test():
                 if not r.is_success: raise HTTPException(502, f"Discord webhook '{hook.get('name') or 'unnamed'}' returned {r.status_code}: {r.text[:300]}")
     return {"sent":True}
 @app.get("/",response_class=HTMLResponse)
-async def home(): return (ROOT/"index.html").read_text().replace("</head>", '<link rel="stylesheet" href="/theme.css"></head>')
+async def home(): return (ROOT/"index.html").read_text().replace("<style>", '<link rel="stylesheet" href="/theme.css"><style>', 1)
 @app.get("/theme.css")
 async def theme(): return FileResponse(ROOT/"theme.css", media_type="text/css")
