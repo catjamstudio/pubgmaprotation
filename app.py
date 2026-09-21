@@ -36,7 +36,7 @@ async def stop_scheduler():
     app.state.scheduler.cancel()
 
 class TextIn(BaseModel): text: str
-class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]
+class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]
 def settings():
     data = yaml.safe_load(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
     data = {**DEFAULTS, **(data or {})}
@@ -116,7 +116,7 @@ async def get_settings():
     data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); return data
 @app.put("/api/settings")
 async def put_settings(payload:Settings):
-    old=settings(); data=payload.model_dump(); data["github_token"]=old.get("github_token",""); save(data); return {"saved":True}
+    old=settings(); data=payload.model_dump(); data["github_token"]=payload.github_token or old.get("github_token",""); save(data); return {"saved":True}
 @app.post("/api/parse/url")
 async def parse_url(payload:TextIn):
     try:return parse(await fetch(payload.text))
