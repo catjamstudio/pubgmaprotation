@@ -43,7 +43,13 @@ def settings():
     if os.getenv("GITHUB_TOKEN"): data["github_token"] = os.getenv("GITHUB_TOKEN")
     if os.getenv("DISCORD_WEBHOOKS"): data["discord_webhooks"] = [x.strip() for x in os.getenv("DISCORD_WEBHOOKS").split(",") if x.strip()]
     if not data.get("discord_webhooks") and data.get("discord_webhook"): data["discord_webhooks"] = [data["discord_webhook"]]
-    data["discord_webhooks"] = [h if isinstance(h, dict) else {"name":"", "username":"", "url":h, "avatar_url":""} for h in data.get("discord_webhooks", [])]
+    normalized=[]
+    for hook in data.get("discord_webhooks", []):
+        h = hook if isinstance(hook, dict) else {"name":"", "username":"", "url":hook, "avatar_url":""}
+        if str(h.get("avatar_url", "")).startswith(("https://discord.com/api/webhooks/", "http://discord.com/api/webhooks/")) and not str(h.get("url", "")).startswith(("http://", "https://discord.com/api/webhooks/")):
+            h["url"], h["avatar_url"] = h.get("avatar_url", ""), h.get("url", "")
+        normalized.append(h)
+    data["discord_webhooks"] = normalized
     return data
 def save(data): CONFIG_FILE.write_text(yaml.safe_dump(data, sort_keys=False))
 def clean(s): return re.sub(r"\s+", " ", s).strip()
