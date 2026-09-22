@@ -62,7 +62,7 @@ def parse(text):
     dates={int(n):d.replace("(Thu)","").replace("(Wed)","").strip() for n,d in re.findall(r"Week\s+(\d+)\s*(?:\|\s*)?([A-Z][a-z]+\s+\d+(?:\([A-Za-z]+\))?)",plain)}
     if not dates:
         dates={int(n):d.strip() for n,d in re.findall(r"Week\s+(\d+)\s+([A-Z][a-z]+\s+\d+)(?:\([A-Za-z]+\))?", text)}
-    result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[],"AS":[],"CONS":[]} for n in sorted(dates)}
+    result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[],"AS":[]} for n in sorted(dates)}
     region=None
     stream = []
     for node in soup.find_all(["h4", "tr"]):
@@ -79,11 +79,11 @@ def parse(text):
         m=re.match(r"Week\s*(\d+)\s*\|\s*(.*)",line,re.I)
         if m and region:
             maps=[clean(x) for x in m.group(2).split("|") if clean(x)]
-            result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[],"AS":[],"CONS":[]})[region]=maps
+            result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[],"AS":[]})[region]=maps
     # Also accept copied plain-text reports where each map is on its own line.
     # The report contains several other regions, so only collect the regions
     # used by this app and ignore headings such as AS, KAKAO, SA, and RU.
-    plain_regions = {"NA", "EU", "SEA", "AS", "CONS"}
+    plain_regions = {"NA", "EU", "SEA", "AS"}
     ignored_regions = {"KAKAO", "SA", "RU"}
     map_names = {"Erangel", "Taego", "Miramar", "Sanhok", "Paramo", "Vikendi", "Rondo", "Karakin", "Deston"}
     plain_region = None
@@ -96,7 +96,7 @@ def parse(text):
             plain_week = None
             continue
         if upper == "CONSOLE (ALL REGIONS)":
-            plain_region = "CONS"
+            plain_region = None
             plain_week = None
             continue
         if upper in ignored_regions:
@@ -106,7 +106,7 @@ def parse(text):
         week_match = re.fullmatch(r"Week\s+(\d+)", item, re.I)
         if week_match and plain_region:
             plain_week = int(week_match.group(1))
-            result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})
+            result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": []})
             continue
         if plain_region and plain_week:
             matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
@@ -121,11 +121,11 @@ def parse(text):
             if item.upper() in plain_regions:
                 current_region, current_week = item.upper(), None
             elif item.upper() == "CONSOLE (ALL REGIONS)":
-                current_region, current_week = "CONS", None
+                current_region, current_week = None, None
             elif item.upper() in ignored_regions:
                 current_region, current_week = None, None
             elif (match := re.fullmatch(r"Week\s+(\d+)", item, re.I)) and current_region:
-                current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})
+                current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": []})
             elif current_region and current_week:
                 matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
                 if matched_map: result[current_week][current_region].append(matched_map)
@@ -140,7 +140,7 @@ def parse(text):
             vals = [clean(c.get_text(" ", strip=True)) for c in tr.select("th,td")]
             if len(vals) >= 2 and re.match(r"Week\s+\d+", vals[0], re.I):
                 week = int(re.search(r"\d+", vals[0]).group())
-                result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})[table_region] = vals[1:]
+                result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": []})[table_region] = vals[1:]
     return {"weeks":list(result.values())}
 def short_date(value):
     for full, short in {"January":"Jan","February":"Feb","March":"Mar","April":"Apr","May":"May","June":"Jun","July":"Jul","August":"Aug","September":"Sep","October":"Oct","November":"Nov","December":"Dec"}.items(): value = value.replace(full, short)
@@ -154,15 +154,15 @@ async def fetch(url):
 async def publish(parsed):
     cfg=settings(); weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
     cur=weeks[index]; files={"maparray":combined_line(cur,f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
-    for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("CONS", "cons", "Console"), ("AS", "as", "AS")]:
+    for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]:
         files[f"maparray_{suffix}"] = region_line(cur, region, f"Week {cur['week']}", label)
     if nxt<len(weeks):
         next_item=weeks[nxt]; files.update(nextweek=combined_line(next_item,f"Next Week {next_item['week']}"),nextweek_sea=line(next_item,"SEA",f"Next Week {next_item['week']}"))
-        for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("CONS", "cons", "Console"), ("AS", "as", "AS")]:
+        for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]:
             files[f"nextweek_{suffix}"] = region_line(next_item, region, f"Next Week {next_item['week']}", label)
     else:
         files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
-        for suffix, label in [("na", "NA"), ("eu", "EU"), ("cons", "Console"), ("as", "AS")]: files[f"nextweek_{suffix}"] = f"Next Week Map Rotation: {label} - Not used this season"
+        for suffix, label in [("na", "NA"), ("eu", "EU"), ("as", "AS")]: files[f"nextweek_{suffix}"] = f"Next Week Map Rotation: {label} - Not used this season"
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
     async with httpx.AsyncClient(timeout=30) as c:
@@ -177,7 +177,7 @@ async def publish(parsed):
             if url:
                 regions = cfg.get("discord_regions", ["combined", "SEA"])
                 selected = []
-                labels = {"combined": ("maparray", "nextweek"), "SEA": ("maparray_sea", "nextweek_sea"), "NA": ("maparray_na", "nextweek_na"), "EU": ("maparray_eu", "nextweek_eu"), "CONS": ("maparray_cons", "nextweek_cons"), "AS": ("maparray_as", "nextweek_as")}
+                labels = {"combined": ("maparray", "nextweek"), "SEA": ("maparray_sea", "nextweek_sea"), "NA": ("maparray_na", "nextweek_na"), "EU": ("maparray_eu", "nextweek_eu"), "AS": ("maparray_as", "nextweek_as")}
                 for selected_region in regions:
                     if selected_region in labels:
                         selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
@@ -223,7 +223,7 @@ async def home():
     page = page.replace("🪂 PUBG Map Rotation", '<img class="brand-logo" src="https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png" alt="PUBG helmet logo"> PUBG Map Rotation', 1)
     page = page.replace('<input id="token" type="password" autocomplete="new-password">', '<div class="secret-field"><input id="token" type="password" autocomplete="new-password"><button type="button" class="secondary eye" onclick="toggleToken()" aria-label="Show or hide GitHub token">👁</button></div>', 1)
     page = page.replace("if(s.github_token_set){$('token').value='••••••••';$('tokenState').textContent='Token saved';}", "if(s.github_token_set){$('token').value=s.github_token;$('tokenState').textContent='Token saved';}", 1)
-    page = page.replace('<h2>Discord webhooks</h2>', '<h2>Discord webhooks</h2><label>Regions sent to Discord</label><div id="discordRegions"><label><input type="checkbox" value="combined" checked> EU + NA combined</label><label><input type="checkbox" value="SEA" checked> SEA</label><label><input type="checkbox" value="NA"> NA</label><label><input type="checkbox" value="EU"> EU</label><label><input type="checkbox" value="CONS"> Console</label><label><input type="checkbox" value="AS"> AS</label></div>', 1)
+    page = page.replace('<h2>Discord webhooks</h2>', '<h2>Discord webhooks</h2><label>Regions sent to Discord</label><div id="discordRegions"><label><input type="checkbox" value="combined" checked> EU + NA combined</label><label><input type="checkbox" value="SEA" checked> SEA</label><label><input type="checkbox" value="NA"> NA</label><label><input type="checkbox" value="EU"> EU</label><label><input type="checkbox" value="AS"> AS</label></div>', 1)
     page = page.replace("discord_webhooks:hooks.map(({saved,...x})=>x)", "discord_webhooks:hooks.map(({saved,...x})=>x),discord_regions:[...document.querySelectorAll('#discordRegions input:checked')].map(e=>e.value)", 1)
     page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
