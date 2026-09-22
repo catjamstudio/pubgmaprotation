@@ -151,18 +151,19 @@ def combined_line(item, prefix): return f"{prefix} ({short_date(item['date'])}) 
 def region_line(item, region, prefix, label=None): return f"{prefix} ({short_date(item['date'])}) Map Rotation: {label or region} - {maps(item, region)}"
 async def fetch(url):
     async with httpx.AsyncClient(timeout=30,follow_redirects=True) as c: r=await c.get(url); r.raise_for_status(); return r.text
-async def publish(parsed):
-    cfg=settings(); weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
+def build_files(parsed, cfg):
+    weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
     cur=weeks[index]; files={"maparray":combined_line(cur,f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
-    for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]:
-        files[f"maparray_{suffix}"] = region_line(cur, region, f"Week {cur['week']}", label)
+    for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]: files[f"maparray_{suffix}"] = region_line(cur, region, f"Week {cur['week']}", label)
     if nxt<len(weeks):
         next_item=weeks[nxt]; files.update(nextweek=combined_line(next_item,f"Next Week {next_item['week']}"),nextweek_sea=line(next_item,"SEA",f"Next Week {next_item['week']}"))
-        for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]:
-            files[f"nextweek_{suffix}"] = region_line(next_item, region, f"Next Week {next_item['week']}", label)
+        for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("AS", "as", "AS")]: files[f"nextweek_{suffix}"] = region_line(next_item, region, f"Next Week {next_item['week']}", label)
     else:
         files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
         for suffix, label in [("na", "NA"), ("eu", "EU"), ("as", "AS")]: files[f"nextweek_{suffix}"] = f"Next Week Map Rotation: {label} - Not used this season"
+    return files
+async def publish(parsed):
+    cfg=settings(); files=build_files(parsed, cfg)
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
     async with httpx.AsyncClient(timeout=30) as c:
@@ -202,15 +203,22 @@ async def parse_text(payload:TextIn): return parse(payload.text)
 @app.post("/api/publish")
 async def do_publish(payload:dict): return {"published":True,"files":await publish(payload["parsed"])}
 @app.post("/api/discord/test")
-async def discord_test():
+async def discord_test(payload:dict):
     cfg=settings()
     if not cfg.get("discord_webhooks"): raise HTTPException(400,"No Discord webhooks are configured")
+    files=build_files(payload["parsed"], cfg) if payload.get("parsed") else None
     async with httpx.AsyncClient() as c:
         for hook in cfg["discord_webhooks"]:
             url = hook.get("url", "") if isinstance(hook, dict) else hook
             if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url:
-                payload={"content":"PUBG Map Rotation webhook test successful."}
+                regions = cfg.get("discord_regions", ["combined", "SEA"])
+                labels = {"combined": ("maparray", "nextweek"), "SEA": ("maparray_sea", "nextweek_sea"), "NA": ("maparray_na", "nextweek_na"), "EU": ("maparray_eu", "nextweek_eu"), "AS": ("maparray_as", "nextweek_as")}
+                selected = []
+                if files:
+                    for selected_region in regions:
+                        if selected_region in labels: selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
+                payload={"content":"PUBG map rotation test:\n"+"\n".join(selected or ["No parsed rotation is loaded."]) }
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
                 r=await c.post(url,json=payload)
@@ -228,6 +236,7 @@ async def home():
     page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"👁\":\"🙈\";} ", 1)
+    page = page.replace("api('/api/discord/test',{method:'POST'})", "api('/api/discord/test',{method:'POST',body:JSON.stringify({parsed:p})})", 1)
     page = page.replace('<br>SEA - ${sea}</div>`', '<br>SEA - ${sea}<br>AS - ${(w.AS&&w.AS.length?w.AS:[\'Not used this season\']).join(\', \')}</div>`', 1)
     page = page.replace('<br>EU - ${eu} | NA - ${na}<br>', '<br>EU - ${eu}<br>NA - ${na}<br>', 1)
     page = page.replace(";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`", ";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');const as=(w.AS&&w.AS.length?w.AS:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}<br>AS - ${as}</div>`", 1)
