@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Container version="2">
+  <Name>pubgmaprotation</Name>
+  <Repository>ghcr.io/catjamstudio/pubgmaprotation:docker-app</Repository>
+  <Registry>https://ghcr.io/</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/catjamstudio/pubgmaprotation</Support>
+  <Project>https://github.com/catjamstudio/pubgmaprotation</Project>
+  <Overview>Parses PUBG map service reports and publishes current and next rotations to GitHub and Discord.</Overview>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png</Icon>
+  <Config Name="WebUI port" Target="8080" Default="18082" Mode="tcp" Description="PUBG Map Rotation WebUI port" Type="Port" Display="always" Required="true" Mask="false">18082</Config>
+  <Config Name="AppData" Target="/config" Default="/mnt/user/appdata/pubgmaprotation/config" Mode="rw" Description="Persistent settings and secrets" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/pubgmaprotation/config</Config>
+</Container>

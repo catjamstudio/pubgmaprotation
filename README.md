@@ -15,6 +15,15 @@ Unraid-friendly Docker WebUI that extracts PUBG map-service reports and publishe
 
 ## Unraid installation
 
+### Downloaded image
+
+After the GitHub Actions package is published, install the Unraid template from `unraid/pubgmaprotation.xml`, or run:
+
+```bash
+docker pull ghcr.io/catjamstudio/pubgmaprotation:docker-app
+docker run -d --name=pubgmaprotation --restart=unless-stopped -p 18082:8080 -v /mnt/user/appdata/pubgmaprotation/config:/config ghcr.io/catjamstudio/pubgmaprotation:docker-app
+```
+
 ```bash
 cd /mnt/user/appdata
 git clone -b docker-app https://github.com/catjamstudio/pubgmaprotation.git pubgmaprotation-src
