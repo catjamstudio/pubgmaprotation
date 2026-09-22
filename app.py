@@ -59,7 +59,9 @@ def parse(text):
         vals=[clean(c.get_text(" ",strip=True)) for c in tr.select("th,td")]
         if vals: rows.append(vals)
     plain="\n".join(" | ".join(r) for r in rows) or text
-    dates={int(n):d.replace("(Thu)","").replace("(Wed)","").strip() for n,d in re.findall(r"Week\s+(\d+)\s*\|\s*([A-Z][a-z]+\s+\d+(?:\([A-Za-z]+\))?)",plain)}
+    dates={int(n):d.replace("(Thu)","").replace("(Wed)","").strip() for n,d in re.findall(r"Week\s+(\d+)\s*(?:\|\s*)?([A-Z][a-z]+\s+\d+(?:\([A-Za-z]+\))?)",plain)}
+    if not dates:
+        dates={int(n):d.strip() for n,d in re.findall(r"Week\s+(\d+)\s+([A-Z][a-z]+\s+\d+)(?:\([A-Za-z]+\))?", text)}
     result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[]} for n in sorted(dates)}
     region=None
     stream = []
@@ -82,6 +84,7 @@ def parse(text):
     # The report contains several other regions, so only collect the regions
     # used by this app and ignore headings such as AS, KAKAO, SA, and RU.
     plain_regions = {"NA", "EU", "SEA"}
+    ignored_regions = {"AS", "KAKAO", "SA", "RU", "CONSOLE (ALL REGIONS)"}
     map_names = {"Erangel", "Taego", "Miramar", "Sanhok", "Paramo", "Vikendi", "Rondo", "Karakin", "Deston"}
     plain_region = None
     plain_week = None
@@ -90,6 +93,10 @@ def parse(text):
         upper = item.upper()
         if upper in plain_regions:
             plain_region = upper
+            plain_week = None
+            continue
+        if upper in ignored_regions:
+            plain_region = None
             plain_week = None
             continue
         week_match = re.fullmatch(r"Week\s+(\d+)", item, re.I)
@@ -109,6 +116,8 @@ def parse(text):
         for item in (clean(line).strip("*:_-").strip() for line in normalized.split("\n")):
             if item.upper() in plain_regions:
                 current_region, current_week = item.upper(), None
+            elif item.upper() in ignored_regions:
+                current_region, current_week = None, None
             elif (match := re.fullmatch(r"Week\s+(\d+)", item, re.I)) and current_region:
                 current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
             elif current_region and current_week:
