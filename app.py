@@ -78,6 +78,27 @@ def parse(text):
         if m and region:
             maps=[clean(x) for x in m.group(2).split("|") if clean(x)]
             result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[]})[region]=maps
+    # Also accept copied plain-text reports where each map is on its own line.
+    # The report contains several other regions, so only collect the regions
+    # used by this app and ignore headings such as AS, KAKAO, SA, and RU.
+    plain_regions = {"NA", "EU", "SEA"}
+    map_names = {"Erangel", "Taego", "Miramar", "Sanhok", "Paramo", "Vikendi", "Rondo", "Karakin", "Deston"}
+    plain_region = None
+    plain_week = None
+    for raw_line in text.splitlines():
+        item = clean(raw_line).strip("*:_-")
+        upper = item.upper()
+        if upper in plain_regions:
+            plain_region = upper
+            plain_week = None
+            continue
+        week_match = re.fullmatch(r"Week\s+(\d+)", item, re.I)
+        if week_match and plain_region:
+            plain_week = int(week_match.group(1))
+            result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
+            continue
+        if plain_region and plain_week and item in map_names:
+            result[plain_week][plain_region].append(item)
     # PUBG's live article consistently orders the normal-match tables as
     # schedule, AS, SEA, KAKAO, NA, SA, EU. Use table boundaries as a
     # fallback when the CMS omits semantic heading tags in its response.
