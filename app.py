@@ -68,7 +68,7 @@ def parse(text):
     for node in soup.find_all(["h4", "tr"]):
         if node.name == "h4":
             title = clean(node.get_text(" ", strip=True)).upper()
-            if title in {"NA", "EU", "SEA"}: region = title
+            if title in {"NA", "EU", "SEA", "AS"}: region = title
         else:
             vals=[clean(c.get_text(" ",strip=True)) for c in node.select("th,td")]
             if vals: stream.append((region, vals))
@@ -228,6 +228,7 @@ async def home():
     page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"👁\":\"🙈\";} ", 1)
+    page = page.replace('<br>SEA - ${sea}</div>`', '<br>SEA - ${sea}<br>AS - ${(w.AS&&w.AS.length?w.AS:[\'Not used this season\']).join(\', \')}</div>`', 1)
     page = page.replace(";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`", ";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');const as=(w.AS&&w.AS.length?w.AS:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}<br>AS - ${as}</div>`", 1)
     return page
 @app.get("/theme.css")
