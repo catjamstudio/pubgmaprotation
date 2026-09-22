@@ -206,19 +206,25 @@ async def do_publish(payload:dict): return {"published":True,"files":await publi
 async def discord_test(payload:dict):
     cfg=settings()
     if not cfg.get("discord_webhooks"): raise HTTPException(400,"No Discord webhooks are configured")
-    files=build_files(payload["parsed"], cfg) if payload.get("parsed") else None
+    regions = payload.get("regions") or cfg.get("discord_regions", ["combined", "SEA"])
+    if not cfg.get("github_token"): raise HTTPException(400,"GitHub token is not configured")
+    headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
+    files={}
+    async with httpx.AsyncClient(timeout=30) as github:
+        for path in ["maparray", "nextweek", "maparray_sea", "nextweek_sea", "maparray_na", "nextweek_na", "maparray_eu", "nextweek_eu", "maparray_as", "nextweek_as"]:
+            response=await github.get(f"https://api.github.com/repos/{cfg['github_username']}/{cfg['github_repo']}/contents/{path}", params={"ref":cfg["github_branch"]}, headers=headers)
+            if response.is_success: files[path]=base64.b64decode(response.json()["content"]).decode()
+    if not files: raise HTTPException(502,"No rotation files could be read from GitHub")
     async with httpx.AsyncClient() as c:
         for hook in cfg["discord_webhooks"]:
             url = hook.get("url", "") if isinstance(hook, dict) else hook
             if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url:
-                regions = cfg.get("discord_regions", ["combined", "SEA"])
                 labels = {"combined": ("maparray", "nextweek"), "SEA": ("maparray_sea", "nextweek_sea"), "NA": ("maparray_na", "nextweek_na"), "EU": ("maparray_eu", "nextweek_eu"), "AS": ("maparray_as", "nextweek_as")}
                 selected = []
-                if files:
-                    for selected_region in regions:
-                        if selected_region in labels: selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
-                payload={"content":"PUBG map rotation test:\n"+"\n".join(selected or ["No parsed rotation is loaded."]) }
+                for selected_region in regions:
+                    if selected_region in labels: selected.extend([files.get(labels[selected_region][0], f"{labels[selected_region][0]} is unavailable"), files.get(labels[selected_region][1], f"{labels[selected_region][1]} is unavailable")])
+                payload={"content":"PUBG map rotation test:\n"+"\n".join(selected or ["No regions selected."]) }
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
                 r=await c.post(url,json=payload)
@@ -236,7 +242,7 @@ async def home():
     page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"👁\":\"🙈\";} ", 1)
-    page = page.replace("api('/api/discord/test',{method:'POST'})", "api('/api/discord/test',{method:'POST',body:JSON.stringify({parsed:p})})", 1)
+    page = page.replace("api('/api/discord/test',{method:'POST'})", "api('/api/discord/test',{method:'POST',body:JSON.stringify({regions:[...document.querySelectorAll('#discordRegions input:checked')].map(e=>e.value)})})", 1)
     page = page.replace('<br>SEA - ${sea}</div>`', '<br>SEA - ${sea}<br>AS - ${(w.AS&&w.AS.length?w.AS:[\'Not used this season\']).join(\', \')}</div>`', 1)
     page = page.replace('<br>EU - ${eu} | NA - ${na}<br>', '<br>EU - ${eu}<br>NA - ${na}<br>', 1)
     page = page.replace(";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`", ";const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');const as=(w.AS&&w.AS.length?w.AS:['Not used this season']).join(', ');return `<div class=\\\"week\\\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}<br>AS - ${as}</div>`", 1)
