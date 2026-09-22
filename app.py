@@ -86,7 +86,7 @@ def parse(text):
     plain_region = None
     plain_week = None
     for raw_line in text.splitlines():
-        item = clean(raw_line).strip("*:_-")
+        item = clean(raw_line).replace("\u00a0", " ").strip("*:_-").strip()
         upper = item.upper()
         if upper in plain_regions:
             plain_region = upper
@@ -97,8 +97,23 @@ def parse(text):
             plain_week = int(week_match.group(1))
             result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
             continue
-        if plain_region and plain_week and item in map_names:
-            result[plain_week][plain_region].append(item)
+        if plain_region and plain_week:
+            matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
+            if matched_map:
+                result[plain_week][plain_region].append(matched_map)
+    # Safety fallback for copied text that has unusual line separators.
+    if not result:
+        normalized = re.sub(r"\r\n?", "\n", text.replace("\u00a0", " "))
+        current_region = None
+        current_week = None
+        for item in (clean(line).strip("*:_-").strip() for line in normalized.split("\n")):
+            if item.upper() in plain_regions:
+                current_region, current_week = item.upper(), None
+            elif (match := re.fullmatch(r"Week\s+(\d+)", item, re.I)) and current_region:
+                current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
+            elif current_region and current_week:
+                matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
+                if matched_map: result[current_week][current_region].append(matched_map)
     # PUBG's live article consistently orders the normal-match tables as
     # schedule, AS, SEA, KAKAO, NA, SA, EU. Use table boundaries as a
     # fallback when the CMS omits semantic heading tags in its response.
