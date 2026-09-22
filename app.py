@@ -11,7 +11,7 @@ from pydantic import BaseModel
 ROOT = Path(__file__).parent
 CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/config")); CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.yaml"
-DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
+DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "discord_regions":["combined","SEA"], "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
 app = FastAPI(title="PUBG Map Rotation", version="1.0.0 build 10")
 last_schedule_key = ""
 
@@ -36,7 +36,7 @@ async def stop_scheduler():
     app.state.scheduler.cancel()
 
 class TextIn(BaseModel): text: str
-class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]
+class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]; discord_regions:list[str]=["combined","SEA"]
 def settings():
     data = yaml.safe_load(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
     data = {**DEFAULTS, **(data or {})}
@@ -62,7 +62,7 @@ def parse(text):
     dates={int(n):d.replace("(Thu)","").replace("(Wed)","").strip() for n,d in re.findall(r"Week\s+(\d+)\s*(?:\|\s*)?([A-Z][a-z]+\s+\d+(?:\([A-Za-z]+\))?)",plain)}
     if not dates:
         dates={int(n):d.strip() for n,d in re.findall(r"Week\s+(\d+)\s+([A-Z][a-z]+\s+\d+)(?:\([A-Za-z]+\))?", text)}
-    result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[]} for n in sorted(dates)}
+    result={n:{"week":n,"date":dates.get(n,"Not used this season"),"NA":[],"EU":[],"SEA":[],"AS":[],"CONS":[]} for n in sorted(dates)}
     region=None
     stream = []
     for node in soup.find_all(["h4", "tr"]):
@@ -79,12 +79,12 @@ def parse(text):
         m=re.match(r"Week\s*(\d+)\s*\|\s*(.*)",line,re.I)
         if m and region:
             maps=[clean(x) for x in m.group(2).split("|") if clean(x)]
-            result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[]})[region]=maps
+            result.setdefault(int(m.group(1)),{"week":int(m.group(1)),"date":"Not used this season","NA":[],"EU":[],"SEA":[],"AS":[],"CONS":[]})[region]=maps
     # Also accept copied plain-text reports where each map is on its own line.
     # The report contains several other regions, so only collect the regions
     # used by this app and ignore headings such as AS, KAKAO, SA, and RU.
-    plain_regions = {"NA", "EU", "SEA"}
-    ignored_regions = {"AS", "KAKAO", "SA", "RU", "CONSOLE (ALL REGIONS)"}
+    plain_regions = {"NA", "EU", "SEA", "AS", "CONS"}
+    ignored_regions = {"KAKAO", "SA", "RU"}
     map_names = {"Erangel", "Taego", "Miramar", "Sanhok", "Paramo", "Vikendi", "Rondo", "Karakin", "Deston"}
     plain_region = None
     plain_week = None
@@ -95,6 +95,10 @@ def parse(text):
             plain_region = upper
             plain_week = None
             continue
+        if upper == "CONSOLE (ALL REGIONS)":
+            plain_region = "CONS"
+            plain_week = None
+            continue
         if upper in ignored_regions:
             plain_region = None
             plain_week = None
@@ -102,7 +106,7 @@ def parse(text):
         week_match = re.fullmatch(r"Week\s+(\d+)", item, re.I)
         if week_match and plain_region:
             plain_week = int(week_match.group(1))
-            result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
+            result.setdefault(plain_week, {"week": plain_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})
             continue
         if plain_region and plain_week:
             matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
@@ -116,17 +120,19 @@ def parse(text):
         for item in (clean(line).strip("*:_-").strip() for line in normalized.split("\n")):
             if item.upper() in plain_regions:
                 current_region, current_week = item.upper(), None
+            elif item.upper() == "CONSOLE (ALL REGIONS)":
+                current_region, current_week = "CONS", None
             elif item.upper() in ignored_regions:
                 current_region, current_week = None, None
             elif (match := re.fullmatch(r"Week\s+(\d+)", item, re.I)) and current_region:
-                current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})
+                current_week = int(match.group(1)); result.setdefault(current_week, {"week": current_week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})
             elif current_region and current_week:
                 matched_map = next((name for name in map_names if item.casefold() == name.casefold()), None)
                 if matched_map: result[current_week][current_region].append(matched_map)
     # PUBG's live article consistently orders the normal-match tables as
     # schedule, AS, SEA, KAKAO, NA, SA, EU. Use table boundaries as a
     # fallback when the CMS omits semantic heading tags in its response.
-    table_regions = {2: "SEA", 4: "NA", 6: "EU"}
+    table_regions = {1: "AS", 2: "SEA", 4: "NA", 6: "EU"}
     for table_index, table_region in table_regions.items():
         tables = soup.select("table")
         if table_index >= len(tables): continue
@@ -134,7 +140,7 @@ def parse(text):
             vals = [clean(c.get_text(" ", strip=True)) for c in tr.select("th,td")]
             if len(vals) >= 2 and re.match(r"Week\s+\d+", vals[0], re.I):
                 week = int(re.search(r"\d+", vals[0]).group())
-                result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": []})[table_region] = vals[1:]
+                result.setdefault(week, {"week": week, "date": "Not used this season", "NA": [], "EU": [], "SEA": [], "AS": [], "CONS": []})[table_region] = vals[1:]
     return {"weeks":list(result.values())}
 def short_date(value):
     for full, short in {"January":"Jan","February":"Feb","March":"Mar","April":"Apr","May":"May","June":"Jun","July":"Jul","August":"Aug","September":"Sep","October":"Oct","November":"Nov","December":"Dec"}.items(): value = value.replace(full, short)
@@ -142,13 +148,21 @@ def short_date(value):
 def maps(item, region): return ", ".join(item.get(region) or ["Not used this season"])
 def line(item, region, prefix): return f"{prefix} ({short_date(item['date'])}) Map Rotation: {region} - {maps(item, region)}"
 def combined_line(item, prefix): return f"{prefix} ({short_date(item['date'])}) Map Rotation: EU - {maps(item, 'EU')} | NA - {maps(item, 'NA')}"
+def region_line(item, region, prefix, label=None): return f"{prefix} ({short_date(item['date'])}) Map Rotation: {label or region} - {maps(item, region)}"
 async def fetch(url):
     async with httpx.AsyncClient(timeout=30,follow_redirects=True) as c: r=await c.get(url); r.raise_for_status(); return r.text
 async def publish(parsed):
     cfg=settings(); weeks=parsed["weeks"]; index=min(max(int((time.time()-int(cfg["rollover_timestamp"]))//604800),0),max(0,len(weeks)-1)); nxt=index+1
     cur=weeks[index]; files={"maparray":combined_line(cur,f"Week {cur['week']}"),"maparray_sea":line(cur,"SEA",f"Week {cur['week']}")}
-    if nxt<len(weeks): files.update(nextweek=combined_line(weeks[nxt],f"Next Week {weeks[nxt]['week']}"),nextweek_sea=line(weeks[nxt],"SEA",f"Next Week {weeks[nxt]['week']}"))
-    else: files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
+    for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("CONS", "cons", "Console"), ("AS", "as", "AS")]:
+        files[f"maparray_{suffix}"] = region_line(cur, region, f"Week {cur['week']}", label)
+    if nxt<len(weeks):
+        next_item=weeks[nxt]; files.update(nextweek=combined_line(next_item,f"Next Week {next_item['week']}"),nextweek_sea=line(next_item,"SEA",f"Next Week {next_item['week']}"))
+        for region, suffix, label in [("NA", "na", "NA"), ("EU", "eu", "EU"), ("CONS", "cons", "Console"), ("AS", "as", "AS")]:
+            files[f"nextweek_{suffix}"] = region_line(next_item, region, f"Next Week {next_item['week']}", label)
+    else:
+        files.update(nextweek="Next Week Map Rotation: EU - Not used this season",nextweek_sea="Next Week Map Rotation: SEA - Not used this season")
+        for suffix, label in [("na", "NA"), ("eu", "EU"), ("cons", "Console"), ("as", "AS")]: files[f"nextweek_{suffix}"] = f"Next Week Map Rotation: {label} - Not used this season"
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
     async with httpx.AsyncClient(timeout=30) as c:
@@ -161,7 +175,13 @@ async def publish(parsed):
             url = hook.get("url", "") if isinstance(hook, dict) else hook
             if url and not url.startswith(("http://", "https://")): raise HTTPException(400, f"Webhook '{hook.get('name') or 'unnamed'}' URL must start with http:// or https://")
             if url:
-                payload={"content":"PUBG map rotation updated:\n"+"\n".join(files.values())}
+                regions = cfg.get("discord_regions", ["combined", "SEA"])
+                selected = []
+                labels = {"combined": ("maparray", "nextweek"), "SEA": ("maparray_sea", "nextweek_sea"), "NA": ("maparray_na", "nextweek_na"), "EU": ("maparray_eu", "nextweek_eu"), "CONS": ("maparray_cons", "nextweek_cons"), "AS": ("maparray_as", "nextweek_as")}
+                for selected_region in regions:
+                    if selected_region in labels:
+                        selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
+                payload={"content":"PUBG map rotation updated:\n"+"\n".join(selected or files.values())}
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
                 response=await c.post(url,json=payload)
@@ -203,6 +223,9 @@ async def home():
     page = page.replace("🪂 PUBG Map Rotation", '<img class="brand-logo" src="https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png" alt="PUBG helmet logo"> PUBG Map Rotation', 1)
     page = page.replace('<input id="token" type="password" autocomplete="new-password">', '<div class="secret-field"><input id="token" type="password" autocomplete="new-password"><button type="button" class="secondary eye" onclick="toggleToken()" aria-label="Show or hide GitHub token">👁</button></div>', 1)
     page = page.replace("if(s.github_token_set){$('token').value='••••••••';$('tokenState').textContent='Token saved';}", "if(s.github_token_set){$('token').value=s.github_token;$('tokenState').textContent='Token saved';}", 1)
+    page = page.replace('<h2>Discord webhooks</h2>', '<h2>Discord webhooks</h2><label>Regions sent to Discord</label><div id="discordRegions"><label><input type="checkbox" value="combined" checked> EU + NA combined</label><label><input type="checkbox" value="SEA" checked> SEA</label><label><input type="checkbox" value="NA"> NA</label><label><input type="checkbox" value="EU"> EU</label><label><input type="checkbox" value="CONS"> Console</label><label><input type="checkbox" value="AS"> AS</label></div>', 1)
+    page = page.replace("discord_webhooks:hooks.map(({saved,...x})=>x)", "discord_webhooks:hooks.map(({saved,...x})=>x),discord_regions:[...document.querySelectorAll('#discordRegions input:checked')].map(e=>e.value)", 1)
+    page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"👁\":\"🙈\";} ", 1)
     return page
