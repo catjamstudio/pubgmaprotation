@@ -1,4 +1,4 @@
-# PUBG Map Rotation — 1.0 build 40
+# PUBG Map Rotation — 1.0 build 45
 
 Unraid-friendly Docker WebUI that extracts PUBG map-service reports and publishes current and next rotations to this repository.
 
