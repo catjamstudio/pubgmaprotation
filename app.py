@@ -124,7 +124,7 @@ async def publish(parsed):
     return files
 @app.get("/api/settings")
 async def get_settings():
-    data=settings(); data["github_token_set"]=bool(data.pop("github_token", "")); return data
+    data=settings(); data["github_token_set"]=bool(data.get("github_token", "")); return data
 @app.put("/api/settings")
 async def put_settings(payload:Settings):
     old=settings(); data=payload.model_dump(); data["github_token"]=payload.github_token or old.get("github_token",""); save(data); return {"saved":True}
@@ -157,6 +157,7 @@ async def home():
     page = page.replace("<style>", '<link rel="stylesheet" href="/theme.css"><style>.brand-logo{width:64px;height:64px;object-fit:contain;vertical-align:middle;filter:drop-shadow(0 4px 5px #000)}.secret-field{display:flex;align-items:stretch;gap:6px}.secret-field input{flex:1;min-width:0}.secret-field .eye{margin:0;min-width:44px;padding:8px}.secret-field .eye:focus{outline:2px solid #31c48d;outline-offset:2px}</style><style>', 1)
     page = page.replace("🪂 PUBG Map Rotation", '<img class="brand-logo" src="https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png" alt="PUBG helmet logo"> PUBG Map Rotation', 1)
     page = page.replace('<input id="token" type="password" autocomplete="new-password">', '<div class="secret-field"><input id="token" type="password" autocomplete="new-password"><button type="button" class="secondary eye" onclick="toggleToken()" aria-label="Show or hide GitHub token">👁</button></div>', 1)
+    page = page.replace("if(s.github_token_set){$('token').value='••••••••';$('tokenState').textContent='Token saved';}", "if(s.github_token_set){$('token').value=s.github_token;$('tokenState').textContent='Token saved';}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"👁\":\"🙈\";} ", 1)
     return page
 @app.get("/theme.css")
