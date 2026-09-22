@@ -12,7 +12,7 @@ ROOT = Path(__file__).parent
 CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/config")); CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.yaml"
 DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "discord_regions":["combined","SEA"], "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
-app = FastAPI(title="PUBG Map Rotation", version="1.0.0 build 10")
+app = FastAPI(title="PUBG Map Rotation", version="1.0.0 build 30")
 last_schedule_key = ""
 
 async def scheduler():
