@@ -165,7 +165,7 @@ def build_files(parsed, cfg):
 async def publish(parsed):
     cfg=settings(); files=build_files(parsed, cfg)
     if cfg.get("append_url_to_message"):
-        files={path: content + " | " + cfg.get("report_url", "") for path, content in files.items()}
+        files={path: content + " | " + cfg.get("report_url", "") if not path.startswith("nextweek") else content for path, content in files.items()}
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
     async with httpx.AsyncClient(timeout=30) as c:
