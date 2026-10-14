@@ -11,7 +11,7 @@ from pydantic import BaseModel
 ROOT = Path(__file__).parent
 CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/config")); CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.yaml"
-DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "discord_regions":["combined","SEA"], "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
+DEFAULTS = {"report_url":"https://pubg.com/en/news/11019", "github_username":"catjamstudio", "github_repo":"pubgmaprotation", "github_branch":"docker-app", "github_token":"", "discord_webhooks":[], "discord_regions":["combined","SEA"], "append_url_to_message":False, "rollover_timestamp":1788915600, "schedule_weekday":2, "schedule_time":"01:00", "automatic_updates":True}
 app = FastAPI(title="PUBG Map Rotation", version="1.0.0 build 45")
 last_schedule_key = ""
 
@@ -36,7 +36,7 @@ async def stop_scheduler():
     app.state.scheduler.cancel()
 
 class TextIn(BaseModel): text: str
-class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; discord_webhooks:list[dict]=[]; discord_regions:list[str]=["combined","SEA"]
+class Settings(BaseModel): report_url:str=""; github_username:str=""; github_repo:str=""; github_branch:str="docker-app"; github_token:str=""; rollover_timestamp:int=1788915600; schedule_weekday:int=2; schedule_time:str="01:00"; automatic_updates:bool=True; append_url_to_message:bool=False; discord_webhooks:list[dict]=[]; discord_regions:list[str]=["combined","SEA"]
 def settings():
     data = yaml.safe_load(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
     data = {**DEFAULTS, **(data or {})}
@@ -182,7 +182,9 @@ async def publish(parsed):
                 for selected_region in regions:
                     if selected_region in labels:
                         selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
-                payload={"content":"PUBG map rotation updated:\n"+"\n".join(selected or files.values())}
+                message="PUBG map rotation updated:\n"+"\n".join(selected or files.values())
+                if cfg.get("append_url_to_message"): message += "\n" + cfg.get("report_url", "")
+                payload={"content":message}
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
                 response=await c.post(url,json=payload)
@@ -224,7 +226,9 @@ async def discord_test(payload:dict):
                 selected = []
                 for selected_region in regions:
                     if selected_region in labels: selected.extend([files.get(labels[selected_region][0], f"{labels[selected_region][0]} is unavailable"), files.get(labels[selected_region][1], f"{labels[selected_region][1]} is unavailable")])
-                payload={"content":"PUBG map rotation test:\n"+"\n".join(selected or ["No regions selected."]) }
+                message="PUBG map rotation test:\n"+"\n".join(selected or ["No regions selected."])
+                if cfg.get("append_url_to_message"): message += "\n" + cfg.get("report_url", "")
+                payload={"content":message}
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
                 r=await c.post(url,json=payload)
@@ -236,12 +240,13 @@ async def home():
     page = page.replace("<style>", '<link rel="stylesheet" href="/theme.css"><style>.brand-logo{width:64px;height:64px;object-fit:contain;vertical-align:middle;filter:drop-shadow(0 4px 5px #000)}.secret-field{display:flex;align-items:flex-start;gap:6px}.secret-field input{flex:1;min-width:0}.secret-field .eye{margin:6px 0 12px;min-width:64px;height:34px;padding:6px 10px;align-self:flex-start}.secret-field .eye:focus{outline:2px solid #31c48d;outline-offset:2px}#discordRegions{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px}#discordRegions label{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}#discordRegions input{width:auto;margin:0}.paste-fallback{margin-top:8px}.paste-fallback summary{cursor:pointer;color:#cbd5df;font-weight:700;padding:8px 0}.paste-fallback textarea{margin-top:4px}section input:not([type=checkbox]),section select,section textarea{margin-top:6px;margin-bottom:12px}section button{margin-top:10px}section .grid{row-gap:8px}</style><style>', 1)
     page = page.replace("🪂 PUBG Map Rotation", '<img class="brand-logo" src="https://raw.githubusercontent.com/catjamstudio/pubgmaprotation/55f4513df6eec9261f1719363f70843d15c1ad38/pubghelmetlogo.png" alt="PUBG helmet logo"> PUBG Map Rotation', 1)
     page = page.replace('<input id="token" type="password" autocomplete="new-password">', '<div class="secret-field"><input id="token" type="password" autocomplete="new-password"><button type="button" class="secondary eye" onclick="toggleToken()" aria-label="Show GitHub token">Show</button></div>', 1)
+    page = page.replace('<label><input id="auto" type="checkbox" style="width:auto"> Automatic updates</label>', '<label><input id="auto" type="checkbox" style="width:auto"> Automatic updates</label><label><input id="appendUrl" type="checkbox" style="width:auto"> Append URL to Message</label>', 1)
     page = page.replace('<textarea id="paste" placeholder="Manual paste fallback"></textarea>', '<details class="paste-fallback"><summary>Manual paste fallback</summary><textarea id="paste" placeholder="Paste the PUBG map service table text here"></textarea></details>', 1)
     page = page.replace('</details><button class="secondary" onclick="paste()">Parse pasted tables</button>', '<button class="secondary" onclick="paste()">Parse pasted tables</button></details>', 1)
     page = page.replace("if(s.github_token_set){$('token').value='••••••••';$('tokenState').textContent='Token saved';}", "if(s.github_token_set){$('token').value=s.github_token;$('tokenState').textContent='Token saved';}", 1)
     page = page.replace('<h2>Discord webhooks</h2>', '<h2>Discord webhooks</h2><label>Regions sent to Discord</label><div id="discordRegions"><label><input type="checkbox" value="combined" checked> EU + NA combined</label><label><input type="checkbox" value="EU"> EU</label><label><input type="checkbox" value="NA"> NA</label><label><input type="checkbox" value="SEA" checked> SEA</label><label><input type="checkbox" value="AS"> AS</label></div><button class="secondary" onclick="save().then(()=>{document.getElementById(\'discordSaveStatus\').textContent=\'Saved\';setTimeout(()=>document.getElementById(\'discordSaveStatus\').textContent=\'\',2500)})">Save settings</button><span id="discordSaveStatus"></span>', 1)
-    page = page.replace("discord_webhooks:hooks.map(({saved,...x})=>x)", "discord_webhooks:hooks.map(({saved,...x})=>x),discord_regions:[...document.querySelectorAll('#discordRegions input:checked')].map(e=>e.value)", 1)
-    page = page.replace("hooks=s.discord_webhooks||[];draw()", "hooks=s.discord_webhooks||[];document.querySelectorAll('#discordRegions input').forEach(e=>e.checked=(s.discord_regions||['combined','SEA']).includes(e.value));draw()", 1)
+    page = page.replace("automatic_updates:$('auto').checked,discord_webhooks:hooks.map(({saved,...x})=>x)", "automatic_updates:$('auto').checked,append_url_to_message:$('appendUrl').checked,discord_webhooks:hooks.map(({saved,...x})=>x)", 1)
+    page = page.replace("$('auto').checked=s.automatic_updates;", "$('auto').checked=s.automatic_updates;$('appendUrl').checked=!!s.append_url_to_message;", 1)
     page = page.replace("function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>`<div class=\"week\"><b>Week ${w.week} (${w.date})</b>\\nEU: ${(w.EU.length?w.EU:['Not used this season']).join(', ')}\\nNA: ${(w.NA.length?w.NA:['Not used this season']).join(', ')}\\nSEA: ${(w.SEA.length?w.SEA:['Not used this season']).join(', ')}</div>`).join('')}", "function show(x){p=x;$('preview').innerHTML=(x.weeks||[]).map(w=>{const date=w.date&&w.date!=='Not used this season'?` (${w.date})`:'';const eu=(w.EU&&w.EU.length?w.EU:['Not used this season']).join(', ');const na=(w.NA&&w.NA.length?w.NA:['Not used this season']).join(', ');const sea=(w.SEA&&w.SEA.length?w.SEA:['Not used this season']).join(', ');return `<div class=\"week\"><b>Week ${w.week}${date} Map Rotation</b><br>EU - ${eu} | NA - ${na}<br>SEA - ${sea}</div>`}).join('')||'No weeks found.'}", 1)
     page = page.replace("let p=null,hooks=[];", "let p=null,hooks=[];function toggleToken(){const t=$(\"token\");const b=document.querySelector(\".secret-field .eye\");t.type=t.type===\"password\"?\"text\":\"password\";b.textContent=t.type===\"password\"?\"Show\":\"Hide\";b.setAttribute(\"aria-label\",t.type===\"password\"?\"Show GitHub token\":\"Hide GitHub token\");} ", 1)
     page = page.replace("api('/api/discord/test',{method:'POST'})", "api('/api/discord/test',{method:'POST',body:JSON.stringify({regions:[...document.querySelectorAll('#discordRegions input:checked')].map(e=>e.value)})})", 1)
