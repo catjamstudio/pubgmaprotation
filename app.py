@@ -164,6 +164,8 @@ def build_files(parsed, cfg):
     return files
 async def publish(parsed):
     cfg=settings(); files=build_files(parsed, cfg)
+    if cfg.get("append_url_to_message"):
+        files={path: content + " | " + cfg.get("report_url", "") for path, content in files.items()}
     if not cfg["github_token"]: raise HTTPException(400,"GitHub token is not configured")
     headers={"Authorization":f"Bearer {cfg['github_token']}","Accept":"application/vnd.github+json","User-Agent":"pubg-map-rotation"}
     async with httpx.AsyncClient(timeout=30) as c:
@@ -183,7 +185,6 @@ async def publish(parsed):
                     if selected_region in labels:
                         selected.extend([files[labels[selected_region][0]], files[labels[selected_region][1]]])
                 message="PUBG map rotation updated:\n"+"\n".join(selected or files.values())
-                if cfg.get("append_url_to_message"): message += "\n" + cfg.get("report_url", "")
                 payload={"content":message}
                 if isinstance(hook, dict) and hook.get("username"): payload["username"] = hook["username"]
                 if isinstance(hook, dict) and hook.get("avatar_url"): payload["avatar_url"] = hook["avatar_url"]
